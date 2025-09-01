@@ -149,53 +149,56 @@
       top: 0;
       left: 0;
       right: 0;
-      background: rgba(0,0,0,0.9);
-      backdrop-filter: blur(20px);
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(10px);
       border-bottom: 1px solid rgba(255,255,255,0.1);
       z-index: 1000;
       transform: translateY(-100%);
-      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: transform 0.2s ease;
     }
     #topMenu.open { transform: translateY(0); }
     
     #menuToggle {
       position: fixed;
-      top: 16px;
-      right: 16px;
-      background: rgba(255,255,255,0.95);
+      top: 12px;
+      right: 12px;
+      background: rgba(255,255,255,0.9);
       color: #000;
       border: none;
-      border-radius: 12px;
-      padding: 12px 16px;
-      font-size: 0.875rem;
-      font-weight: 500;
+      border-radius: 8px;
+      padding: 8px;
+      font-size: 1rem;
       cursor: pointer;
       z-index: 1001;
       transition: all 0.2s ease;
-      min-height: 44px;
+      min-height: 36px;
+      min-width: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     #menuToggle:hover { background: #fff; transform: translateY(-1px); }
     
     #menuContent {
-      padding: 20px;
-      display: grid;
-      gap: 16px;
-    }
-    
-    .menuSection {
+      padding: 12px 16px;
       display: flex;
-      flex-wrap: wrap;
       gap: 8px;
       align-items: center;
     }
     
+    .menuSection {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    
     .menuSectionTitle {
-      font-size: 0.75rem;
+      font-size: 0.7rem;
       font-weight: 600;
-      color: rgba(255,255,255,0.7);
+      color: rgba(255,255,255,0.6);
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      margin-bottom: 8px;
+      margin-bottom: 4px;
       width: 100%;
     }
     
@@ -203,13 +206,17 @@
       background: rgba(255,255,255,0.1);
       color: #fff;
       border: 1px solid rgba(255,255,255,0.2);
-      border-radius: 8px;
-      padding: 8px 12px;
-      font-size: 0.8125rem;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 0.875rem;
       font-weight: 500;
       cursor: pointer;
       transition: all 0.2s ease;
-      min-height: 36px;
+      min-height: 32px;
+      min-width: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     .menuBtn:hover { background: rgba(255,255,255,0.2); }
     .menuBtn.active { background: rgba(255,255,255,0.3); border-color: rgba(255,255,255,0.4); }
@@ -219,6 +226,7 @@
       background: rgba(255,255,255,0.15);
       border-color: rgba(255,255,255,0.3);
       font-weight: 600;
+      font-size: 1rem;
     }
     .menuBtn.primary:hover { background: rgba(255,255,255,0.25); }
     
@@ -231,8 +239,10 @@
     /* Submenu styles */
     .submenu {
       border-top: 1px solid rgba(255,255,255,0.1);
-      padding-top: 16px;
-      margin-top: 16px;
+      padding-top: 12px;
+      margin-top: 12px;
+      display: grid;
+      gap: 8px;
     }
     
     /* Hide old controls */
@@ -362,32 +372,32 @@
   </div>
 
   <!-- Top Menu -->
-  <button id="menuToggle">☰ Menu</button>
+  <button id="menuToggle">☰</button>
   <div id="topMenu">
     <div id="menuContent">
+      <!-- Main Menu -->
       <div class="menuSection">
+        <button id="menuToggleMute" class="menuBtn primary">🔊</button>
+        <button id="menuStartCalibration" class="menuBtn primary">🎯</button>
+        <button id="menuMore" class="menuBtn secondary">⋯</button>
+      </div>
+      
+      <!-- More Submenu -->
+      <div id="moreSubmenu" class="menuSection submenu" style="display: none;">
         <div class="menuSectionTitle">Mode</div>
         <button id="menuModeGaze" class="menuBtn">Gaze</button>
         <button id="menuModePointer" class="menuBtn">Pointer</button>
         <button id="menuToggleCursor" class="menuBtn">Hide Cursor</button>
-      </div>
-      <div class="menuSection">
-        <div class="menuSectionTitle">Calibration</div>
-        <button id="menuStartCalibration" class="menuBtn">Start Calibration</button>
-        <button id="menuRecalibrate" class="menuBtn">Recalibrate</button>
-      </div>
-      <div class="menuSection">
+        
         <div class="menuSectionTitle">Playback</div>
-        <button id="menuToggleMute" class="menuBtn">Unmute</button>
         <button id="menuSwapNow" class="menuBtn">Swap Now</button>
-      </div>
-      <div class="menuSection">
+        
         <div class="menuSectionTitle">Upload</div>
         <button id="menuUploadBtn" class="menuBtn">Add Videos</button>
         <button id="menuResetLibrary" class="menuBtn">Reset Library</button>
-      </div>
-      <div class="menuSection">
+        
         <div class="menuSectionTitle">Settings</div>
+        <button id="menuRecalibrate" class="menuBtn">Recalibrate</button>
         <button id="menuOpenSheet" class="menuBtn">Advanced Settings</button>
       </div>
     </div>
@@ -470,6 +480,8 @@ const menuSwapNow = document.getElementById("menuSwapNow");
 const menuUploadBtn = document.getElementById("menuUploadBtn");
 const menuResetLibrary = document.getElementById("menuResetLibrary");
 const menuOpenSheet = document.getElementById("menuOpenSheet");
+const menuMore = document.getElementById("menuMore");
+const moreSubmenu = document.getElementById("moreSubmenu");
 
 let active = null;
 let lastAttended = null;
@@ -477,19 +489,19 @@ let mode = localStorage.getItem("mode") || "gaze"; // 'gaze' | 'pointer'
 let showCursor = localStorage.getItem("showCursor") !== "false"; // default true
 let videoLibrary = [];
 let nextIndex = 0;
+// Simplified gaze tracking variables
 let isWebgazerStarted = false;
-let pointerY = null;
-
-// Gaze tracking variables
-let gazeHistory = [];
-let lastGazeTime = 0;
-let gazeSmoothingFactor = 0.3; // Lower = smoother but less responsive
-let minGazeInterval = 100; // Minimum ms between gaze updates
-let gazeConfidenceThreshold = 0.6; // Minimum confidence for valid gaze
-let lastStableY = null;
-let gazeStabilityCounter = 0;
 let lastSwitchTime = 0;
-let lastStableX = null; // Added for stuck value detection
+
+// Remove all complex tracking variables
+// let gazeHistory = [];
+// let lastGazeTime = 0;
+// let gazeSmoothingFactor = 0.3;
+// let minGazeInterval = 100;
+// let gazeConfidenceThreshold = 0.6;
+// let lastStableY = null;
+// let lastStableX = null;
+// let gazeStabilityCounter = 0;
 
 function defaultLibrary() {
   return [
@@ -700,14 +712,18 @@ function updateModeUI() {
   menuModeGaze.classList.toggle('active', mode === 'gaze');
   menuModePointer.classList.toggle('active', mode === 'pointer');
   menuToggleCursor.textContent = showCursor ? 'Hide Cursor' : 'Show Cursor';
+  
+  // Update mute button text
+  const isMuted = video1.muted || video2.muted;
+  menuToggleMute.textContent = isMuted ? '🔊' : '🔇';
 }
 
 function handleAttentionAt(y) {
   if (typeof y !== 'number') return;
   
-  // Add debouncing to prevent rapid switching
+  // Simple debouncing to prevent rapid switching
   const now = Date.now();
-  const minSwitchInterval = 500; // Minimum 500ms between switches
+  const minSwitchInterval = 1000; // 1 second between switches
   
   if (showCursor) {
     cursor.style.left = `${Math.max(0, Math.min(window.innerWidth, window.innerWidth / 2))}px`;
@@ -742,71 +758,9 @@ function pointerMoveListener(e) {
   handleAttentionAt(pointerY);
 }
 
-function smoothGazeData(x, y, confidence) {
-  const now = Date.now();
-  
-  // Only process if enough time has passed and confidence is high enough
-  if (now - lastGazeTime < minGazeInterval || confidence < gazeConfidenceThreshold) {
-    return null;
-  }
-  
-  // Add to history (keep last 5 points)
-  gazeHistory.push({ x, y, confidence, timestamp: now });
-  if (gazeHistory.length > 5) {
-    gazeHistory.shift();
-  }
-  
-  // Calculate weighted average based on confidence and recency
-  let totalWeight = 0;
-  let weightedX = 0;
-  let weightedY = 0;
-  
-  gazeHistory.forEach((point, index) => {
-    const age = now - point.timestamp;
-    const recencyWeight = Math.max(0, 1 - (age / 1000)); // Decay over 1 second
-    const confidenceWeight = point.confidence;
-    const weight = recencyWeight * confidenceWeight;
-    
-    weightedX += point.x * weight;
-    weightedY += point.y * weight;
-    totalWeight += weight;
-  });
-  
-  if (totalWeight === 0) return null;
-  
-  const smoothedX = weightedX / totalWeight;
-  const smoothedY = weightedY / totalWeight;
-  
-  // Apply exponential smoothing
-  const finalX = lastStableY !== null ? 
-    (smoothedX * gazeSmoothingFactor) + (lastStableY * (1 - gazeSmoothingFactor)) : 
-    smoothedX;
-  
-  lastGazeTime = now;
-  lastStableY = smoothedY;
-  lastStableX = smoothedX; // Update lastStableX
-  
-  return { x: finalX, y: smoothedY };
-}
-
-function isGazeStable(y) {
-  if (lastStableY === null) {
-    lastStableY = y;
-    return true;
-  }
-  
-  const diff = Math.abs(y - lastStableY);
-  const isStable = diff < 50; // 50px threshold for stability
-  
-  if (isStable) {
-    gazeStabilityCounter++;
-  } else {
-    gazeStabilityCounter = Math.max(0, gazeStabilityCounter - 1);
-  }
-  
-  // Require 3 stable readings before considering gaze stable
-  return gazeStabilityCounter >= 3;
-}
+// Remove complex smoothing functions - they're no longer needed
+// function smoothGazeData(x, y, confidence) { ... }
+// function isGazeStable(y) { ... }
 
 function ensureWebgazerStarted() {
   if (isWebgazerStarted) return Promise.resolve();
@@ -836,83 +790,34 @@ function ensureWebgazerStarted() {
 
 function startGazeTracking() {
   try {
-    // Clear any existing listeners first
-    webgazer.clearGazeListener();
-    
-    // Reset tracking variables
-    gazeHistory = [];
-    lastGazeTime = 0;
-    lastStableY = null;
-    gazeStabilityCounter = 0;
-    lastSwitchTime = 0;
-    lastStableX = null; // Reset lastStableX
-    
-    console.log('Starting gaze tracking...');
+    console.log('Starting simple gaze tracking...');
     
     webgazer.setGazeListener((data) => {
-      // Debug logging
-      if (data && (data.x !== null || data.y !== null)) {
-        console.log('Gaze data received:', { x: data.x, y: data.y, confidence: data.confidence });
-      }
-      
       if (!data || data.x === null || data.y === null) {
-        console.log('Invalid gaze data received');
         return;
       }
       
       const x = data.x;
       const y = data.y;
-      const confidence = data.confidence || 0.5;
       
-      // Enhanced validation - check for stuck values
+      // Simple bounds checking
       if (x < 0 || x > window.innerWidth || y < 0 || y > window.innerHeight) {
-        console.log('Gaze data out of bounds:', { x, y });
         return;
       }
       
-      // Check for stuck values (same position for too long)
-      if (lastStableX !== null && lastStableY !== null) {
-        const xDiff = Math.abs(x - lastStableX);
-        const yDiff = Math.abs(y - lastStableY);
-        if (xDiff < 5 && yDiff < 5) {
-          console.log('Gaze data appears stuck, ignoring:', { x, y, xDiff, yDiff });
-          return;
-        }
-      }
-      
-      // Apply smoothing and filtering
-      const smoothed = smoothGazeData(x, y, confidence);
-      if (!smoothed) {
-        console.log('Gaze data filtered out');
-        return;
-      }
-      
-      const { x: filteredX, y: filteredY } = smoothed;
-      
-      // Check if gaze is stable before updating
-      if (!isGazeStable(filteredY)) {
-        console.log('Gaze not stable yet');
-        return;
-      }
-      
-      // Apply boundary constraints
-      const boundedX = Math.max(0, Math.min(window.innerWidth, filteredX));
-      const boundedY = Math.max(0, Math.min(window.innerHeight, filteredY));
-      
-      console.log('Final gaze position:', { x: boundedX, y: boundedY });
-      
+      // Update cursor position directly
       if (showCursor) {
-        cursor.style.left = `${boundedX}px`;
-        cursor.style.top = `${boundedY}px`;
+        cursor.style.left = `${x}px`;
+        cursor.style.top = `${y}px`;
       }
       
-      handleAttentionAt(boundedY);
+      // Handle attention based on Y position only
+      handleAttentionAt(y);
     });
     
-    console.log('Gaze tracking started successfully');
+    console.log('Simple gaze tracking started');
   } catch(error) {
     console.error('Error starting gaze tracking:', error);
-    // Fallback to pointer mode
     mode = 'pointer';
     updateModeUI();
     startPointerTracking();
@@ -932,11 +837,8 @@ function stopGazeTracking() {
 function startCalibrationFlow() {
   currentPoint = 0;
   calibrationData = [];
-  // Reset gaze tracking variables
-  gazeHistory = [];
-  lastGazeTime = 0;
-  lastStableY = null;
-  gazeStabilityCounter = 0;
+  // Reset simple tracking variables
+  lastSwitchTime = 0;
   calibrationOverlay.style.display = "flex";
   showCalibrationPoint();
 }
@@ -1002,14 +904,28 @@ showCalibrationPoint = function() {
 // Menu event listeners
 menuToggle.addEventListener('click', () => {
   topMenu.classList.toggle('open');
-  menuToggle.textContent = topMenu.classList.contains('open') ? '✕ Close' : '☰ Menu';
+  menuToggle.textContent = topMenu.classList.contains('open') ? '✕' : '☰';
+  // Close submenu when main menu closes
+  if (!topMenu.classList.contains('open')) {
+    moreSubmenu.style.display = 'none';
+    menuMore.textContent = '⋯';
+  }
+});
+
+// More submenu toggle
+menuMore.addEventListener('click', () => {
+  const isSubmenuOpen = moreSubmenu.style.display !== 'none';
+  moreSubmenu.style.display = isSubmenuOpen ? 'none' : 'block';
+  menuMore.textContent = isSubmenuOpen ? '⋯' : '⋯';
 });
 
 // Close menu when clicking outside
 document.addEventListener('click', (e) => {
   if (!topMenu.contains(e.target) && !menuToggle.contains(e.target)) {
     topMenu.classList.remove('open');
-    menuToggle.textContent = '☰ Menu';
+    menuToggle.textContent = '☰';
+    moreSubmenu.style.display = 'none';
+    menuMore.textContent = '⋯';
   }
 });
 
@@ -1057,14 +973,9 @@ function resetEyeTracking() {
       webgazer.end();
     }
     
-    // Reset variables
+    // Reset simple variables
     isWebgazerStarted = false;
-    gazeHistory = [];
-    lastGazeTime = 0;
-    lastStableY = null;
-    gazeStabilityCounter = 0;
     lastSwitchTime = 0;
-    lastStableX = null; // Reset lastStableX
     
     console.log('Eye tracking reset complete');
   } catch (error) {
