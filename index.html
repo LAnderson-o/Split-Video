@@ -459,6 +459,16 @@ let nextIndex = 0;
 let isWebgazerStarted = false;
 let pointerY = null;
 
+// Gaze tracking variables
+let gazeHistory = [];
+let lastGazeTime = 0;
+let gazeSmoothingFactor = 0.3; // Lower = smoother but less responsive
+let minGazeInterval = 100; // Minimum ms between gaze updates
+let gazeConfidenceThreshold = 0.6; // Minimum confidence for valid gaze
+let lastStableY = null;
+let gazeStabilityCounter = 0;
+let lastSwitchTime = 0;
+
 function defaultLibrary() {
   return [
     { src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4", name: "Big Buck Bunny" },
@@ -629,8 +639,9 @@ toggleMuteBtn.addEventListener('click', () => {
   if (!willUnmute) unlock.style.display = "block";
 });
 
-const points = [[10,20],[90,20],[50,50],[10,80],[90,80]];
+const points = [[10,20],[90,20],[50,50],[10,80],[90,80],[25,35],[75,35],[25,65],[75,65]];
 let currentPoint = 0;
+let calibrationData = [];
 
 function showCalibrationPoint() {
   if (currentPoint >= points.length) { calibrationOverlay.style.display = "none"; startTracking(); return; }
@@ -640,7 +651,14 @@ function showCalibrationPoint() {
 }
 
 calibrationDot.addEventListener("click", () => {
-  try { webgazer.recordScreenPosition(calibrationDot.offsetLeft, calibrationDot.offsetTop, "click"); } catch(_) {}
+  try { 
+    webgazer.recordScreenPosition(calibrationDot.offsetLeft, calibrationDot.offsetTop, "click"); 
+    // Store calibration data for validation
+    calibrationData.push({
+      target: { x: calibrationDot.offsetLeft, y: calibrationDot.offsetTop },
+      timestamp: Date.now()
+    });
+  } catch(_) {}
   currentPoint++;
   showCalibrationPoint();
 });
@@ -661,18 +679,26 @@ function updateModeUI() {
 
 function handleAttentionAt(y) {
   if (typeof y !== 'number') return;
+  
+  // Add debouncing to prevent rapid switching
+  const now = Date.now();
+  const minSwitchInterval = 500; // Minimum 500ms between switches
+  
   if (showCursor) {
-    // Use actual gaze X position instead of center
     cursor.style.left = `${Math.max(0, Math.min(window.innerWidth, window.innerWidth / 2))}px`;
     cursor.style.top = `${y}px`;
   }
+  
   const half = window.innerHeight / 2;
   let currentlyLookingAt = (y < half) ? video1 : video2;
-  if (currentlyLookingAt !== lastAttended) {
+  
+  // Only switch if enough time has passed and we're looking at a different video
+  if (currentlyLookingAt !== lastAttended && (now - (lastSwitchTime || 0)) > minSwitchInterval) {
     activate(currentlyLookingAt);
     const nonActive = (currentlyLookingAt === video1) ? video2 : video1;
     cycleVideo(nonActive);
     lastAttended = currentlyLookingAt;
+    lastSwitchTime = now;
   }
 }
 
@@ -689,6 +715,71 @@ function stopPointerTracking() {
 function pointerMoveListener(e) {
   pointerY = e.clientY;
   handleAttentionAt(pointerY);
+}
+
+function smoothGazeData(x, y, confidence) {
+  const now = Date.now();
+  
+  // Only process if enough time has passed and confidence is high enough
+  if (now - lastGazeTime < minGazeInterval || confidence < gazeConfidenceThreshold) {
+    return null;
+  }
+  
+  // Add to history (keep last 5 points)
+  gazeHistory.push({ x, y, confidence, timestamp: now });
+  if (gazeHistory.length > 5) {
+    gazeHistory.shift();
+  }
+  
+  // Calculate weighted average based on confidence and recency
+  let totalWeight = 0;
+  let weightedX = 0;
+  let weightedY = 0;
+  
+  gazeHistory.forEach((point, index) => {
+    const age = now - point.timestamp;
+    const recencyWeight = Math.max(0, 1 - (age / 1000)); // Decay over 1 second
+    const confidenceWeight = point.confidence;
+    const weight = recencyWeight * confidenceWeight;
+    
+    weightedX += point.x * weight;
+    weightedY += point.y * weight;
+    totalWeight += weight;
+  });
+  
+  if (totalWeight === 0) return null;
+  
+  const smoothedX = weightedX / totalWeight;
+  const smoothedY = weightedY / totalWeight;
+  
+  // Apply exponential smoothing
+  const finalX = lastStableY !== null ? 
+    (smoothedX * gazeSmoothingFactor) + (lastStableY * (1 - gazeSmoothingFactor)) : 
+    smoothedX;
+  
+  lastGazeTime = now;
+  lastStableY = smoothedY;
+  
+  return { x: finalX, y: smoothedY };
+}
+
+function isGazeStable(y) {
+  if (lastStableY === null) {
+    lastStableY = y;
+    return true;
+  }
+  
+  const diff = Math.abs(y - lastStableY);
+  const isStable = diff < 50; // 50px threshold for stability
+  
+  if (isStable) {
+    gazeStabilityCounter++;
+  } else {
+    gazeStabilityCounter = Math.max(0, gazeStabilityCounter - 1);
+  }
+  
+  // Require 3 stable readings before considering gaze stable
+  return gazeStabilityCounter >= 3;
 }
 
 function ensureWebgazerStarted() {
@@ -709,22 +800,30 @@ function startGazeTracking() {
   try {
     webgazer.setGazeListener((data) => {
       if (!data || data.x === null || data.y === null) return;
+      
       const x = data.x;
       const y = data.y;
+      const confidence = data.confidence || 0.5; // Default confidence if not provided
       
-      // Apply drift compensation - filter out extreme values
-      const maxDrift = 100; // pixels
-      const centerX = window.innerWidth / 2;
-      const centerY = window.innerHeight / 2;
+      // Apply smoothing and filtering
+      const smoothed = smoothGazeData(x, y, confidence);
+      if (!smoothed) return;
       
-      const filteredX = Math.abs(x - centerX) > maxDrift ? centerX : x;
-      const filteredY = Math.abs(y - centerY) > maxDrift ? centerY : y;
+      const { x: filteredX, y: filteredY } = smoothed;
+      
+      // Check if gaze is stable before updating
+      if (!isGazeStable(filteredY)) return;
+      
+      // Apply boundary constraints
+      const boundedX = Math.max(0, Math.min(window.innerWidth, filteredX));
+      const boundedY = Math.max(0, Math.min(window.innerHeight, filteredY));
       
       if (showCursor) {
-        cursor.style.left = `${Math.max(0, Math.min(window.innerWidth, filteredX))}px`;
-        cursor.style.top = `${Math.max(0, Math.min(window.innerHeight, filteredY))}px`;
+        cursor.style.left = `${boundedX}px`;
+        cursor.style.top = `${boundedY}px`;
       }
-      handleAttentionAt(filteredY);
+      
+      handleAttentionAt(boundedY);
     });
   } catch(_) {}
 }
@@ -735,6 +834,12 @@ function stopGazeTracking() {
 
 function startCalibrationFlow() {
   currentPoint = 0;
+  calibrationData = [];
+  // Reset gaze tracking variables
+  gazeHistory = [];
+  lastGazeTime = 0;
+  lastStableY = null;
+  gazeStabilityCounter = 0;
   calibrationOverlay.style.display = "flex";
   showCalibrationPoint();
 }
