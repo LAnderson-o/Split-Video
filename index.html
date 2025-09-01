@@ -10,6 +10,7 @@
       flex-direction: column;
       height: 100vh;
       overflow: hidden;
+      background: black;
     }
     .video-container {
       flex: 1;
@@ -40,20 +41,23 @@
       padding: 10px 20px;
       border-radius: 12px;
       cursor: pointer;
+      z-index: 10;
     }
   </style>
 </head>
 <body>
   <div class="video-container">
-    <video id="video1" src="https://www.w3schools.com/html/mov_bbb.mp4"></video>
+    <video id="video1" muted loop></video>
   </div>
   <div class="video-container">
-    <video id="video2" src="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"></video>
+    <video id="video2" muted loop></video>
   </div>
 
   <div id="cursor"></div>
   <div id="unlock">🔊 Tap to Enable Sound</div>
 
+  <!-- WebGazer script -->
+  <script src="https://webgazer.cs.brown.edu/webgazer.js"></script>
   <script>
     const video1 = document.getElementById("video1");
     const video2 = document.getElementById("video2");
@@ -61,7 +65,40 @@
     const unlock = document.getElementById("unlock");
 
     let active = null;
-    let audioUnlocked = false;
+
+    // Video libraries
+    const library1 = [
+      "https://www.w3schools.com/html/mov_bbb.mp4",
+      "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+      "https://www.w3schools.com/html/movie.mp4"
+    ];
+    const library2 = [
+      "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+      "https://www.w3schools.com/html/mov_bbb.mp4",
+      "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/bee.mp4"
+    ];
+
+    let index1 = 0;
+    let index2 = 0;
+
+    // Load initial videos
+    function loadVideo(videoEl, library, index) {
+      videoEl.src = library[index % library.length];
+      videoEl.load();
+      return videoEl;
+    }
+    loadVideo(video1, library1, index1);
+    loadVideo(video2, library2, index2);
+
+    // Cycle through when one ends
+    video1.addEventListener("ended", () => {
+      index1++;
+      loadVideo(video1, library1, index1).play();
+    });
+    video2.addEventListener("ended", () => {
+      index2++;
+      loadVideo(video2, library2, index2).play();
+    });
 
     function activate(video) {
       if (active === video) return;
@@ -70,35 +107,46 @@
       active = video;
     }
 
-    document.addEventListener("mousemove", (e) => {
-      cursor.style.left = e.pageX + "px";
-      cursor.style.top = e.pageY + "px";
+    // Unlock audio
+    unlock.addEventListener("click", () => {
+      [video1, video2].forEach(v => {
+        v.muted = false;
+        v.play().catch(() => {});
+      });
+      unlock.style.display = "none";
+    });
+
+    // Start WebGazer
+    window.saveDataAcrossSessions = true;
+    webgazer.setGazeListener((data) => {
+      if (data == null) return;
+
+      const x = data.x;
+      const y = data.y;
+
+      cursor.style.left = x + "px";
+      cursor.style.top = y + "px";
 
       const half = window.innerHeight / 2;
-      if (e.clientY < half) {
+      if (y < half) {
         activate(video1);
       } else {
         activate(video2);
       }
-    });
-
-    // Unlock audio after first tap
-    unlock.addEventListener("click", () => {
-      [video1, video2].forEach(v => {
-        v.muted = false;
-        v.play().catch(() => {}); // try playing with sound
-      });
-      unlock.style.display = "none";
-      audioUnlocked = true;
-    });
-
-    // preload library so you can swap sources
-    const videoLibrary = [
-      "https://www.w3schools.com/html/mov_bbb.mp4",
-      "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-      "https://media.w3.org/2010/05/sintel/trailer.mp4",
-      "https://media.w3.org/2010/05/bunny/trailer.mp4"
-    ];
+    }).begin();
+    
+    // Hide WebGazer debug overlay
+    window.onload = function() {
+      const style = document.createElement('style');
+      style.innerHTML = `
+        #webgazerVideoFeed, 
+        #webgazerVideoCanvas, 
+        #webgazerFaceOverlay, 
+        #webgazerFaceFeedbackBox {
+          display: none !important;
+        }`;
+      document.head.appendChild(style);
+    }
   </script>
 </body>
 </html>
