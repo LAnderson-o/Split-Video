@@ -43,6 +43,7 @@
   const startButton = document.getElementById("startButton");
 
   let active = null;
+  let lastAttended = null;
 
   // Video libraries
   const library1 = [
@@ -94,16 +95,9 @@
   function activate(video){
     if(active === video) return;
 
-    const nonActive = (video===video1)? video2 : video1;
-    const library = (nonActive===video1)? library1 : library2;
-    const indexVar = (nonActive===video1)? "index1" : "index2";
-
     if(active) active.pause();
     video.play();
     active = video;
-
-    // Cycle the non-attentive half seamlessly
-    cycleNonAttentive(nonActive, library, indexVar);
   }
 
   unlock.addEventListener("click", ()=>{
@@ -133,8 +127,23 @@
       const x=data.x, y=data.y;
       cursor.style.left=x+"px";
       cursor.style.top=y+"px";
-      const half=window.innerHeight/2;
-      if(y<half) activate(video1); else activate(video2);
+
+      const half = window.innerHeight/2;
+      let currentlyLookingAt = (y<half)? video1 : video2;
+
+      if(currentlyLookingAt !== lastAttended){
+        // Activate new half
+        activate(currentlyLookingAt);
+
+        // Immediately cycle the non-attentive half
+        const nonActive = (currentlyLookingAt === video1)? video2 : video1;
+        const library = (nonActive===video1)? library1 : library2;
+        const indexVar = (nonActive===video1)? "index1" : "index2";
+        cycleNonAttentive(nonActive, library, indexVar);
+
+        lastAttended = currentlyLookingAt;
+      }
+
     }).begin();
 
     const style=document.createElement('style');
