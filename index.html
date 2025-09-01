@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Split-Video</title>
   <style>
     body { margin:0; display:flex; flex-direction:column; height:100vh; overflow:hidden; background:black; }
@@ -13,14 +14,35 @@
     #calibrationOverlay { position:absolute; inset:0; background:rgba(0,0,0,0.85); display:none; align-items:center; justify-content:center; flex-direction:column; z-index:30; color:white; font-size:20px; }
     #calibrationOverlay p { margin-bottom:50px; z-index:31; }
     .calibration-dot { position:absolute; width:30px; height:30px; background:yellow; border-radius:50%; transform:translate(-50%,-50%); z-index:32; cursor:pointer; }
+    /* Controls */
+    #controls { position:absolute; right:10px; top:10px; display:flex; gap:8px; z-index:40; }
+    .btn { -webkit-tap-highlight-color: transparent; background:rgba(255,255,255,0.9); color:#111; border:none; border-radius:12px; padding:10px 12px; font-size:14px; cursor:pointer; }
+    .btn.ghost { background:rgba(0,0,0,0.5); color:#fff; border:1px solid rgba(255,255,255,0.25); }
+    #modeBadge { position:absolute; left:10px; top:10px; background:rgba(0,0,0,0.6); color:#fff; padding:8px 10px; border-radius:10px; font-size:12px; z-index:40; }
+    /* Bottom sheet */
+    #sheet { position:absolute; left:0; right:0; bottom:0; background:rgba(0,0,0,0.85); color:#fff; z-index:45; transform:translateY(100%); transition:transform 200ms ease; border-top-left-radius:14px; border-top-right-radius:14px; }
+    #sheet.open { transform:translateY(0); }
+    #sheetHeader { display:flex; align-items:center; justify-content:space-between; padding:12px 14px; }
+    #sheetContent { padding:0 14px 14px; display:grid; gap:12px; }
+    .row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .pill { background:rgba(255,255,255,0.1); padding:6px 10px; border-radius:999px; font-size:12px; }
+    #playlist { display:flex; overflow-x:auto; gap:8px; padding:8px 0 14px; }
+    .chip { flex:0 0 auto; background:rgba(255,255,255,0.12); color:#fff; border:1px solid rgba(255,255,255,0.2); padding:6px 10px; border-radius:999px; font-size:12px; }
+    input[type="file"] { display:none; }
+    /* Safe areas */
+    @supports (padding: env(safe-area-inset-top)) {
+      #modeBadge { top: calc(10px + env(safe-area-inset-top)); }
+      #controls { top: calc(10px + env(safe-area-inset-top)); }
+      #sheet { padding-bottom: env(safe-area-inset-bottom); }
+    }
   </style>
 </head>
 <body>
   <div class="video-container">
-    <video id="video1" muted loop></video>
+    <video id="video1" muted loop playsinline></video>
   </div>
   <div class="video-container">
-    <video id="video2" muted loop></video>
+    <video id="video2" muted loop playsinline></video>
   </div>
 
   <div id="cursor"></div>
@@ -32,6 +54,43 @@
     <div id="calibrationDot" class="calibration-dot"></div>
   </div>
 
+  <div id="modeBadge">Mode: Gaze</div>
+  <div id="controls">
+    <button id="toggleMode" class="btn">Use Pointer</button>
+    <button id="recalibrate" class="btn">Recalibrate</button>
+    <button id="openSheet" class="btn ghost">⋯</button>
+  </div>
+
+  <div id="sheet" aria-hidden="true">
+    <div id="sheetHeader">
+      <strong>Controls</strong>
+      <button id="closeSheet" class="btn">Close</button>
+    </div>
+    <div id="sheetContent">
+      <div class="row">
+        <span class="pill">Playback</span>
+        <button id="toggleMute" class="btn">Unmute</button>
+        <button id="swapNow" class="btn ghost">Swap Now</button>
+      </div>
+      <div class="row">
+        <span class="pill">Mode</span>
+        <button id="modeGaze" class="btn">Gaze</button>
+        <button id="modePointer" class="btn ghost">Pointer</button>
+        <button id="toggleCursor" class="btn ghost">Hide Cursor</button>
+      </div>
+      <div class="row">
+        <span class="pill">Upload</span>
+        <button id="uploadBtn" class="btn">Add Videos</button>
+        <input id="fileInput" type="file" accept="video/*" multiple>
+        <button id="resetLibrary" class="btn ghost">Reset Library</button>
+      </div>
+      <div>
+        <div style="opacity:.7; font-size:12px; margin-bottom:6px;">Queue</div>
+        <div id="playlist"></div>
+      </div>
+    </div>
+  </div>
+
 <script src="https://webgazer.cs.brown.edu/webgazer.js"></script>
 <script>
 const video1 = document.getElementById("video1");
@@ -41,26 +100,100 @@ const unlock = document.getElementById("unlock");
 const calibrationOverlay = document.getElementById("calibrationOverlay");
 const calibrationDot = document.getElementById("calibrationDot");
 const startButton = document.getElementById("startButton");
+const modeBadge = document.getElementById("modeBadge");
+const toggleModeBtn = document.getElementById("toggleMode");
+const recalibrateBtn = document.getElementById("recalibrate");
+const openSheetBtn = document.getElementById("openSheet");
+const closeSheetBtn = document.getElementById("closeSheet");
+const sheet = document.getElementById("sheet");
+const toggleMuteBtn = document.getElementById("toggleMute");
+const swapNowBtn = document.getElementById("swapNow");
+const modeGazeBtn = document.getElementById("modeGaze");
+const modePointerBtn = document.getElementById("modePointer");
+const toggleCursorBtn = document.getElementById("toggleCursor");
+const uploadBtn = document.getElementById("uploadBtn");
+const fileInput = document.getElementById("fileInput");
+const resetLibraryBtn = document.getElementById("resetLibrary");
+const playlistEl = document.getElementById("playlist");
 
 let active = null;
 let lastAttended = null;
-let videoLibrary = [
-  "https://www.w3schools.com/html/mov_bbb.mp4",
-  "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-  "https://www.w3schools.com/html/movie.mp4",
-  "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/bee.mp4",
-  "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/earth.mp4"
-];
-let index = 0;
+let mode = localStorage.getItem("mode") || "gaze"; // 'gaze' | 'pointer'
+let showCursor = localStorage.getItem("showCursor") !== "false"; // default true
+let videoLibrary = [];
+let nextIndex = 0;
+let isWebgazerStarted = false;
+let pointerY = null;
 
-function loadVideo(videoEl, index) {
-  videoEl.src = videoLibrary[index];
+function defaultLibrary() {
+  return [
+    { src: "https://www.w3schools.com/html/mov_bbb.mp4", name: "Big Buck Bunny" },
+    { src: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4", name: "Flower" },
+    { src: "https://www.w3schools.com/html/movie.mp4", name: "Bear" },
+    { src: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/bee.mp4", name: "Bee" },
+    { src: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/earth.mp4", name: "Earth" }
+  ];
+}
+
+function initLibrary(reset=false) {
+  if (!reset) {
+    try {
+      const saved = JSON.parse(localStorage.getItem("library") || "null");
+      if (saved && Array.isArray(saved) && saved.length) {
+        videoLibrary = saved;
+      } else {
+        videoLibrary = defaultLibrary();
+      }
+    } catch(_) {
+      videoLibrary = defaultLibrary();
+    }
+  } else {
+    videoLibrary = defaultLibrary();
+  }
+  nextIndex = 0;
+  renderPlaylist();
+}
+
+function persistLibrary() {
+  localStorage.setItem("library", JSON.stringify(videoLibrary));
+}
+
+function renderPlaylist() {
+  playlistEl.innerHTML = "";
+  videoLibrary.forEach((item, i) => {
+    const div = document.createElement('div');
+    div.className = 'chip';
+    div.textContent = item.name || `Video ${i+1}`;
+    playlistEl.appendChild(div);
+  });
+}
+
+function loadVideo(videoEl, libIndex) {
+  const item = videoLibrary[libIndex % videoLibrary.length];
+  if (!item) return;
+  videoEl.dataset.libIndex = String(libIndex % videoLibrary.length);
+  videoEl.src = item.src;
   videoEl.load();
 }
 
+function getNextIndex(excludeLibIndex) {
+  if (!videoLibrary.length) return 0;
+  // Ensure not identical to exclude when possible
+  for (let i = 0; i < videoLibrary.length; i++) {
+    const candidate = (nextIndex + i) % videoLibrary.length;
+    if (candidate !== excludeLibIndex) {
+      nextIndex = (candidate + 1) % videoLibrary.length;
+      return candidate;
+    }
+  }
+  const val = nextIndex; nextIndex = (nextIndex + 1) % videoLibrary.length; return val;
+}
+
 function cycleVideo(videoEl) {
-  index = (index + 1) % videoLibrary.length;
-  loadVideo(videoEl, index);
+  const other = (videoEl === video1) ? video2 : video1;
+  const exclude = other.dataset.libIndex ? parseInt(other.dataset.libIndex, 10) : -1;
+  const idx = getNextIndex(exclude);
+  loadVideo(videoEl, idx);
 }
 
 function activate(video) {
@@ -75,6 +208,12 @@ unlock.addEventListener("click", () => {
   unlock.style.display = "none";
 });
 
+toggleMuteBtn.addEventListener('click', () => {
+  const willUnmute = video1.muted || video2.muted;
+  [video1, video2].forEach(v => { v.muted = !willUnmute ? true : false; if (!v.paused) v.play().catch(()=>{}); });
+  if (!willUnmute) unlock.style.display = "block";
+});
+
 const points = [[10,10],[90,10],[50,50],[10,90],[90,90]];
 let currentPoint = 0;
 
@@ -86,50 +225,185 @@ function showCalibrationPoint() {
 }
 
 calibrationDot.addEventListener("click", () => {
-  webgazer.recordScreenPosition(calibrationDot.offsetLeft, calibrationDot.offsetTop, "click");
+  try { webgazer.recordScreenPosition(calibrationDot.offsetLeft, calibrationDot.offsetTop, "click"); } catch(_) {}
   currentPoint++;
   showCalibrationPoint();
 });
 
-function startTracking() {
-  webgazer.setGazeListener((data) => {
-    if (!data) return;
-    const x = data.x, y = data.y;
-    cursor.style.left = `${x}px`;
+function updateModeUI() {
+  modeBadge.textContent = `Mode: ${mode === 'gaze' ? 'Gaze' : 'Pointer'}`;
+  toggleModeBtn.textContent = mode === 'gaze' ? 'Use Pointer' : 'Use Gaze';
+  cursor.style.display = showCursor ? 'block' : 'none';
+  toggleCursorBtn.textContent = showCursor ? 'Hide Cursor' : 'Show Cursor';
+  localStorage.setItem('mode', mode);
+  localStorage.setItem('showCursor', String(showCursor));
+}
+
+function handleAttentionAt(y) {
+  if (typeof y !== 'number') return;
+  if (showCursor) {
+    cursor.style.left = `${window.innerWidth / 2}px`;
     cursor.style.top = `${y}px`;
+  }
+  const half = window.innerHeight / 2;
+  let currentlyLookingAt = (y < half) ? video1 : video2;
+  if (currentlyLookingAt !== lastAttended) {
+    activate(currentlyLookingAt);
+    const nonActive = (currentlyLookingAt === video1) ? video2 : video1;
+    cycleVideo(nonActive);
+    lastAttended = currentlyLookingAt;
+  }
+}
 
-    const half = window.innerHeight / 2;
-    let currentlyLookingAt = (y < half) ? video1 : video2;
+function startPointerTracking() {
+  window.addEventListener('pointermove', pointerMoveListener);
+  window.addEventListener('pointerdown', pointerMoveListener);
+}
 
-    if (currentlyLookingAt !== lastAttended) {
-      activate(currentlyLookingAt);
-      const nonActive = (currentlyLookingAt === video1) ? video2 : video1;
-      cycleVideo(nonActive);
-      lastAttended = currentlyLookingAt;
-    }
-  }).begin();
+function stopPointerTracking() {
+  window.removeEventListener('pointermove', pointerMoveListener);
+  window.removeEventListener('pointerdown', pointerMoveListener);
+}
 
-  const style = document.createElement('style');
-  style.innerHTML = "#webgazerVideoFeed, #webgazerVideoCanvas, #webgazerFaceOverlay, #webgazerFaceFeedbackBox { display: none !important; }";
-  document.head.appendChild(style);
+function pointerMoveListener(e) {
+  pointerY = e.clientY;
+  handleAttentionAt(pointerY);
+}
 
-  [video1, video2].forEach(v => {
-    v.muted = false;
-    v.play().catch(() => {});
-  });
+function ensureWebgazerStarted() {
+  if (isWebgazerStarted) return Promise.resolve();
+  try {
+    return webgazer.setRegression('ridge').showVideo(false).showPredictionPoints(false).begin().then(() => {
+      isWebgazerStarted = true;
+      const style = document.createElement('style');
+      style.innerHTML = "#webgazerVideoFeed, #webgazerVideoCanvas, #webgazerFaceOverlay, #webgazerFaceFeedbackBox { display: none !important; }";
+      document.head.appendChild(style);
+    });
+  } catch (e) {
+    return Promise.reject(e);
+  }
+}
+
+function startGazeTracking() {
+  try {
+    webgazer.setGazeListener((data) => {
+      if (!data) return;
+      const y = data.y;
+      if (showCursor) {
+        cursor.style.left = `${data.x}px`;
+        cursor.style.top = `${y}px`;
+      }
+      handleAttentionAt(y);
+    });
+  } catch(_) {}
+}
+
+function stopGazeTracking() {
+  try { webgazer.clearGazeListener(); } catch(_) {}
+}
+
+function startCalibrationFlow() {
+  currentPoint = 0;
+  calibrationOverlay.style.display = "flex";
+  showCalibrationPoint();
+}
+
+function finishCalibration() {
+  calibrationOverlay.style.display = "none";
+  // Initialize tracking based on current mode
+  if (mode === 'gaze') {
+    ensureWebgazerStarted().then(() => {
+      startGazeTracking();
+    }).catch(err => {
+      mode = 'pointer';
+      updateModeUI();
+      startPointerTracking();
+      alert("Camera access denied. Switched to Pointer mode.");
+      console.error(err);
+    });
+  } else {
+    startPointerTracking();
+  }
 }
 
 startButton.addEventListener("click", () => {
   startButton.style.display = "none";
-  webgazer.setRegression('ridge').showVideo(false).showPredictionPoints(false).begin()
-    .then(() => {
-      calibrationOverlay.style.display = "flex";
-      showCalibrationPoint();
+  if (mode === 'gaze') {
+    ensureWebgazerStarted().then(() => {
+      startCalibrationFlow();
     }).catch(err => {
-      alert("Camera access denied. Please allow camera to use eye tracking.");
+      mode = 'pointer';
+      updateModeUI();
+      startPointerTracking();
+      alert("Camera access denied. Using Pointer mode.");
       console.error(err);
     });
+  } else {
+    startCalibrationFlow();
+  }
 });
+
+// Complete calibration after tapping through points
+const origShowCalibrationPoint = showCalibrationPoint;
+showCalibrationPoint = function() {
+  if (currentPoint >= points.length) { finishCalibration(); return; }
+  const [px, py] = points[currentPoint];
+  calibrationDot.style.left = `${Math.min(Math.max(px, 5), 95)}%`;
+  calibrationDot.style.top = `${Math.min(Math.max(py, 5), 95)}%`;
+}
+
+// Controls wiring
+openSheetBtn.addEventListener('click', () => { sheet.classList.add('open'); sheet.setAttribute('aria-hidden','false'); });
+closeSheetBtn.addEventListener('click', () => { sheet.classList.remove('open'); sheet.setAttribute('aria-hidden','true'); });
+recalibrateBtn.addEventListener('click', () => { sheet.classList.remove('open'); startCalibrationFlow(); });
+toggleModeBtn.addEventListener('click', () => {
+  mode = mode === 'gaze' ? 'pointer' : 'gaze';
+  applyMode();
+});
+modeGazeBtn.addEventListener('click', () => { mode = 'gaze'; applyMode(); });
+modePointerBtn.addEventListener('click', () => { mode = 'pointer'; applyMode(); });
+toggleCursorBtn.addEventListener('click', () => { showCursor = !showCursor; updateModeUI(); });
+swapNowBtn.addEventListener('click', () => {
+  const nonActive = (active === video1) ? video2 : video1;
+  cycleVideo(nonActive);
+});
+uploadBtn.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', (e) => {
+  const files = Array.from(e.target.files || []);
+  if (!files.length) return;
+  files.forEach(f => {
+    const url = URL.createObjectURL(f);
+    videoLibrary.push({ src: url, name: f.name });
+  });
+  persistLibrary();
+  renderPlaylist();
+  // If we had fewer than 2 before, ensure both screens are filled
+  if (!video1.src) loadVideo(video1, 0);
+  if (!video2.src) loadVideo(video2, 1);
+});
+resetLibraryBtn.addEventListener('click', () => { initLibrary(true); persistLibrary(); renderPlaylist(); });
+
+function applyMode() {
+  updateModeUI();
+  if (mode === 'gaze') {
+    stopPointerTracking();
+    ensureWebgazerStarted().then(() => { startGazeTracking(); }).catch(() => {
+      mode = 'pointer'; updateModeUI(); startPointerTracking();
+    });
+  } else {
+    stopGazeTracking();
+    startPointerTracking();
+  }
+}
+
+// Init
+initLibrary(false);
+loadVideo(video1, 0);
+loadVideo(video2, 1);
+updateModeUI();
+
+// Start both muted for autoplay compatibility
+[video1, video2].forEach(v => { v.muted = true; v.play().catch(()=>{}); });
 </script>
 </body>
 </html>
