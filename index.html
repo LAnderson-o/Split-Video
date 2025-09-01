@@ -214,6 +214,27 @@
     .menuBtn:hover { background: rgba(255,255,255,0.2); }
     .menuBtn.active { background: rgba(255,255,255,0.3); border-color: rgba(255,255,255,0.4); }
     
+    /* Primary and secondary button styles */
+    .menuBtn.primary {
+      background: rgba(255,255,255,0.15);
+      border-color: rgba(255,255,255,0.3);
+      font-weight: 600;
+    }
+    .menuBtn.primary:hover { background: rgba(255,255,255,0.25); }
+    
+    .menuBtn.secondary {
+      background: rgba(255,255,255,0.08);
+      border-color: rgba(255,255,255,0.15);
+    }
+    .menuBtn.secondary:hover { background: rgba(255,255,255,0.15); }
+    
+    /* Submenu styles */
+    .submenu {
+      border-top: 1px solid rgba(255,255,255,0.1);
+      padding-top: 16px;
+      margin-top: 16px;
+    }
+    
     /* Hide old controls */
     #controls, #modeBadge { display: none; }
     
@@ -929,9 +950,19 @@ function finishCalibration() {
   }
 }
 
-startButton.addEventListener("click", () => {
+startButton.addEventListener("click", async () => {
   startButton.style.display = "none";
   if (mode === 'gaze') {
+    // Request camera permission first
+    const hasPermission = await requestCameraPermission();
+    if (!hasPermission) {
+      mode = 'pointer';
+      updateModeUI();
+      startPointerTracking();
+      return;
+    }
+    
+    // Then start WebGazer
     ensureWebgazerStarted().then(() => {
       startCalibrationFlow();
     }).catch(err => {
