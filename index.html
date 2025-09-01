@@ -44,11 +44,24 @@
       cursor: pointer;
       z-index: 10;
     }
+    #startButton {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 20px 30px;
+      background: rgba(255,255,255,0.9);
+      color: black;
+      font-size: 18px;
+      border-radius: 12px;
+      cursor: pointer;
+      z-index: 50;
+    }
     #calibrationOverlay {
       position: absolute;
       inset: 0;
       background: rgba(0,0,0,0.85);
-      display: flex;
+      display: none;
       align-items: center;
       justify-content: center;
       flex-direction: column;
@@ -83,6 +96,8 @@
   <div id="cursor"></div>
   <div id="unlock">🔊 Tap to Enable Sound</div>
 
+  <div id="startButton">Start Calibration</div>
+
   <div id="calibrationOverlay">
     <p>Look at the yellow dot and tap it</p>
     <div id="calibrationDot" class="calibration-dot"></div>
@@ -96,6 +111,7 @@
     const unlock = document.getElementById("unlock");
     const calibrationOverlay = document.getElementById("calibrationOverlay");
     const calibrationDot = document.getElementById("calibrationDot");
+    const startButton = document.getElementById("startButton");
 
     let active = null;
 
@@ -201,7 +217,25 @@
       document.head.appendChild(style);
     }
 
-    window.onload = showCalibrationPoint;
+    // Start calibration button handler
+    startButton.addEventListener("click", () => {
+      startButton.style.display = "none";
+
+      webgazer
+        .setRegression('ridge')
+        .showVideo(false)
+        .showPredictionPoints(false)
+        .begin()
+        .then(() => {
+          // camera is now active
+          calibrationOverlay.style.display = "flex";
+          showCalibrationPoint();
+        })
+        .catch(err => {
+          alert("Camera access denied. Please allow camera to use eye tracking.");
+          console.error(err);
+        });
+    });
   </script>
 </body>
 </html>
