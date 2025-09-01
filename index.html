@@ -5,34 +5,284 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Split-Video</title>
   <style>
-    body { margin:0; display:flex; flex-direction:column; height:100vh; overflow:hidden; background:black; }
-    .video-container { flex:1; display:flex; }
-    video { width:100%; height:100%; object-fit:cover; background:black; }
-    #cursor { position:absolute; width:15px; height:15px; border-radius:50%; background:red; pointer-events:none; transform:translate(-50%,-50%); z-index:20; }
-    #unlock { position:absolute; top:10px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.7); color:white; padding:10px 20px; border-radius:12px; cursor:pointer; z-index:10; }
-    #startButton { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); padding:20px 30px; background:rgba(255,255,255,0.9); color:black; font-size:18px; border-radius:12px; cursor:pointer; z-index:50; }
-    #calibrationOverlay { position:absolute; inset:0; background:rgba(0,0,0,0.85); display:none; align-items:center; justify-content:center; flex-direction:column; z-index:30; color:white; font-size:20px; }
-    #calibrationOverlay p { margin-bottom:50px; z-index:31; }
-    .calibration-dot { position:absolute; width:30px; height:30px; background:yellow; border-radius:50%; transform:translate(-50%,-50%); z-index:32; cursor:pointer; }
+    * { box-sizing: border-box; }
+    body { 
+      margin: 0; 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      display: flex; 
+      flex-direction: column; 
+      height: 100vh; 
+      overflow: hidden; 
+      background: #000; 
+      color: #fff;
+      -webkit-font-smoothing: antialiased;
+    }
+    
+    /* Video Layout */
+    .video-container { 
+      flex: 1; 
+      display: flex; 
+      position: relative;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .video-container:last-child { border-bottom: none; }
+    
+    video { 
+      width: 100%; 
+      height: 100%; 
+      object-fit: cover; 
+      background: #111; 
+      transition: opacity 0.2s ease;
+    }
+    video.loading { opacity: 0.7; }
+    video.error { opacity: 0.5; }
+    
+    /* Video overlays */
+    .video-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.3);
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      pointer-events: none;
+      font-size: 0.875rem;
+      color: rgba(255,255,255,0.8);
+    }
+    .video-overlay.show { opacity: 1; }
+    
+    /* Cursor */
+    #cursor { 
+      position: absolute; 
+      width: 12px; 
+      height: 12px; 
+      border-radius: 50%; 
+      background: #ff4444; 
+      border: 2px solid rgba(255,255,255,0.8);
+      pointer-events: none; 
+      transform: translate(-50%,-50%); 
+      z-index: 20;
+      transition: opacity 0.2s ease;
+    }
+    
+    /* Top UI */
+    #unlock { 
+      position: absolute; 
+      top: 16px; 
+      left: 50%; 
+      transform: translateX(-50%); 
+      background: rgba(0,0,0,0.8); 
+      backdrop-filter: blur(10px);
+      color: #fff; 
+      padding: 12px 20px; 
+      border-radius: 20px; 
+      cursor: pointer; 
+      z-index: 10;
+      font-size: 0.875rem;
+      font-weight: 500;
+      border: 1px solid rgba(255,255,255,0.1);
+      transition: all 0.2s ease;
+    }
+    #unlock:hover { background: rgba(0,0,0,0.9); }
+    
+    #startButton { 
+      position: absolute; 
+      top: 50%; 
+      left: 50%; 
+      transform: translate(-50%,-50%); 
+      padding: 20px 32px; 
+      background: #fff; 
+      color: #000; 
+      font-size: 1rem; 
+      font-weight: 600;
+      border-radius: 16px; 
+      cursor: pointer; 
+      z-index: 50;
+      border: none;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+      transition: all 0.2s ease;
+    }
+    #startButton:hover { transform: translate(-50%,-50%) scale(1.02); }
+    
+    /* Calibration */
+    #calibrationOverlay { 
+      position: absolute; 
+      inset: 0; 
+      background: rgba(0,0,0,0.9); 
+      backdrop-filter: blur(10px);
+      display: none; 
+      align-items: center; 
+      justify-content: center; 
+      flex-direction: column; 
+      z-index: 30; 
+      color: #fff; 
+      font-size: 1.125rem;
+      text-align: center;
+    }
+    #calibrationOverlay p { 
+      margin: 0 0 3rem 0; 
+      z-index: 31; 
+      font-weight: 500;
+    }
+    .calibration-dot { 
+      position: absolute; 
+      width: 32px; 
+      height: 32px; 
+      background: #ffeb3b; 
+      border-radius: 50%; 
+      transform: translate(-50%,-50%); 
+      z-index: 32; 
+      cursor: pointer;
+      box-shadow: 0 0 20px rgba(255,235,59,0.6);
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: translate(-50%,-50%) scale(1); }
+      50% { transform: translate(-50%,-50%) scale(1.1); }
+    }
+    
     /* Controls */
-    #controls { position:absolute; right:10px; top:10px; display:flex; gap:8px; z-index:40; }
-    .btn { -webkit-tap-highlight-color: transparent; background:rgba(255,255,255,0.9); color:#111; border:none; border-radius:12px; padding:10px 12px; font-size:14px; cursor:pointer; }
-    .btn.ghost { background:rgba(0,0,0,0.5); color:#fff; border:1px solid rgba(255,255,255,0.25); }
-    #modeBadge { position:absolute; left:10px; top:10px; background:rgba(0,0,0,0.6); color:#fff; padding:8px 10px; border-radius:10px; font-size:12px; z-index:40; }
-    /* Bottom sheet */
-    #sheet { position:absolute; left:0; right:0; bottom:0; background:rgba(0,0,0,0.85); color:#fff; z-index:45; transform:translateY(100%); transition:transform 200ms ease; border-top-left-radius:14px; border-top-right-radius:14px; }
-    #sheet.open { transform:translateY(0); }
-    #sheetHeader { display:flex; align-items:center; justify-content:space-between; padding:12px 14px; }
-    #sheetContent { padding:0 14px 14px; display:grid; gap:12px; }
-    .row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-    .pill { background:rgba(255,255,255,0.1); padding:6px 10px; border-radius:999px; font-size:12px; }
-    #playlist { display:flex; overflow-x:auto; gap:8px; padding:8px 0 14px; }
-    .chip { flex:0 0 auto; background:rgba(255,255,255,0.12); color:#fff; border:1px solid rgba(255,255,255,0.2); padding:6px 10px; border-radius:999px; font-size:12px; }
-    input[type="file"] { display:none; }
+    #modeBadge { 
+      position: absolute; 
+      left: 16px; 
+      top: 16px; 
+      background: rgba(0,0,0,0.7); 
+      backdrop-filter: blur(10px);
+      color: #fff; 
+      padding: 8px 12px; 
+      border-radius: 12px; 
+      font-size: 0.75rem; 
+      font-weight: 500;
+      z-index: 40;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    #controls { 
+      position: absolute; 
+      right: 16px; 
+      top: 16px; 
+      display: flex; 
+      gap: 8px; 
+      z-index: 40; 
+    }
+    
+    .btn { 
+      -webkit-tap-highlight-color: transparent; 
+      background: rgba(255,255,255,0.95); 
+      color: #000; 
+      border: none; 
+      border-radius: 12px; 
+      padding: 10px 14px; 
+      font-size: 0.875rem; 
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      min-height: 40px;
+    }
+    .btn:hover { background: #fff; transform: translateY(-1px); }
+    .btn.ghost { 
+      background: rgba(0,0,0,0.7); 
+      backdrop-filter: blur(10px);
+      color: #fff; 
+      border: 1px solid rgba(255,255,255,0.2); 
+    }
+    .btn.ghost:hover { background: rgba(0,0,0,0.8); }
+    
+    /* Bottom Sheet */
+    #sheet { 
+      position: absolute; 
+      left: 0; 
+      right: 0; 
+      bottom: 0; 
+      background: rgba(0,0,0,0.95); 
+      backdrop-filter: blur(20px);
+      color: #fff; 
+      z-index: 45; 
+      transform: translateY(100%); 
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
+      border-top-left-radius: 20px; 
+      border-top-right-radius: 20px;
+      border-top: 1px solid rgba(255,255,255,0.1);
+      max-height: 60vh;
+      overflow-y: auto;
+    }
+    #sheet.open { transform: translateY(0); }
+    
+    #sheetHeader { 
+      display: flex; 
+      align-items: center; 
+      justify-content: space-between; 
+      padding: 20px 20px 16px; 
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    #sheetHeader strong { font-size: 1.125rem; font-weight: 600; }
+    
+    #sheetContent { 
+      padding: 20px; 
+      display: grid; 
+      gap: 24px; 
+    }
+    
+    .row { 
+      display: flex; 
+      align-items: center; 
+      gap: 12px; 
+      flex-wrap: wrap; 
+    }
+    
+    .pill { 
+      background: rgba(255,255,255,0.1); 
+      padding: 6px 12px; 
+      border-radius: 16px; 
+      font-size: 0.75rem; 
+      font-weight: 500;
+      color: rgba(255,255,255,0.8);
+      min-width: 80px;
+      text-align: center;
+    }
+    
+    #playlist { 
+      display: flex; 
+      overflow-x: auto; 
+      gap: 8px; 
+      padding: 12px 0 16px;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+    #playlist::-webkit-scrollbar { display: none; }
+    
+    .chip { 
+      flex: 0 0 auto; 
+      background: rgba(255,255,255,0.08); 
+      color: #fff; 
+      border: 1px solid rgba(255,255,255,0.15); 
+      padding: 8px 12px; 
+      border-radius: 16px; 
+      font-size: 0.75rem;
+      font-weight: 500;
+      white-space: nowrap;
+      max-width: 120px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    input[type="file"] { display: none; }
+    
+    /* Responsive */
+    @media (max-width: 480px) {
+      #controls { gap: 6px; }
+      .btn { padding: 8px 12px; font-size: 0.8125rem; }
+      #sheetContent { padding: 16px; gap: 20px; }
+      .row { gap: 8px; }
+    }
+    
     /* Safe areas */
     @supports (padding: env(safe-area-inset-top)) {
-      #modeBadge { top: calc(10px + env(safe-area-inset-top)); }
-      #controls { top: calc(10px + env(safe-area-inset-top)); }
+      #modeBadge { top: calc(16px + env(safe-area-inset-top)); }
+      #controls { top: calc(16px + env(safe-area-inset-top)); }
+      #unlock { top: calc(16px + env(safe-area-inset-top)); }
       #sheet { padding-bottom: env(safe-area-inset-bottom); }
     }
   </style>
@@ -40,9 +290,11 @@
 <body>
   <div class="video-container">
     <video id="video1" muted loop playsinline></video>
+    <div class="video-overlay" id="overlay1">Loading...</div>
   </div>
   <div class="video-container">
     <video id="video2" muted loop playsinline></video>
+    <div class="video-overlay" id="overlay2">Loading...</div>
   </div>
 
   <div id="cursor"></div>
@@ -95,6 +347,8 @@
 <script>
 const video1 = document.getElementById("video1");
 const video2 = document.getElementById("video2");
+const overlay1 = document.getElementById("overlay1");
+const overlay2 = document.getElementById("overlay2");
 const cursor = document.getElementById("cursor");
 const unlock = document.getElementById("unlock");
 const calibrationOverlay = document.getElementById("calibrationOverlay");
@@ -168,10 +422,65 @@ function renderPlaylist() {
   });
 }
 
+function getVideoOverlay(videoEl) {
+  return videoEl === video1 ? overlay1 : overlay2;
+}
+
+function showVideoState(videoEl, state, message) {
+  const overlay = getVideoOverlay(videoEl);
+  overlay.textContent = message;
+  videoEl.className = state;
+  overlay.className = `video-overlay ${state === 'loading' || state === 'error' ? 'show' : ''}`;
+}
+
+function isValidVideoFormat(src) {
+  if (!src) return false;
+  // Check for supported video formats and avoid problematic sources
+  const supportedFormats = /\.(mp4|webm|ogg|mov)(\?.*)?$/i;
+  const isDataUrl = src.startsWith('data:');
+  const isBlobUrl = src.startsWith('blob:');
+  const isHttpUrl = src.startsWith('http');
+  
+  return isDataUrl || isBlobUrl || (isHttpUrl && supportedFormats.test(src));
+}
+
 function loadVideo(videoEl, libIndex) {
   const item = videoLibrary[libIndex % videoLibrary.length];
-  if (!item) return;
+  if (!item || !isValidVideoFormat(item.src)) {
+    showVideoState(videoEl, 'error', 'Invalid video format');
+    return;
+  }
+  
   videoEl.dataset.libIndex = String(libIndex % videoLibrary.length);
+  showVideoState(videoEl, 'loading', 'Loading...');
+  
+  // Clear previous event listeners
+  videoEl.onloadeddata = null;
+  videoEl.onerror = null;
+  videoEl.oncanplay = null;
+  
+  videoEl.onloadeddata = () => {
+    showVideoState(videoEl, '', '');
+    // Auto-play if this is the active video
+    if (active === videoEl && !videoEl.muted) {
+      videoEl.play().catch(() => {});
+    }
+  };
+  
+  videoEl.onerror = () => {
+    console.warn('Video load error:', item.src);
+    showVideoState(videoEl, 'error', 'Failed to load');
+    // Try next video after a delay
+    setTimeout(() => {
+      const nextIdx = getNextIndex(parseInt(videoEl.dataset.libIndex, 10));
+      if (nextIdx !== libIndex) loadVideo(videoEl, nextIdx);
+    }, 2000);
+  };
+  
+  videoEl.oncanplay = () => {
+    showVideoState(videoEl, '', '');
+  };
+  
   videoEl.src = item.src;
   videoEl.load();
 }
@@ -371,15 +680,38 @@ uploadBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', (e) => {
   const files = Array.from(e.target.files || []);
   if (!files.length) return;
+  
+  let validCount = 0;
+  let invalidCount = 0;
+  
   files.forEach(f => {
-    const url = URL.createObjectURL(f);
-    videoLibrary.push({ src: url, name: f.name });
+    // Validate file type
+    const validTypes = ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'];
+    const isValidType = validTypes.includes(f.type) || /\.(mp4|webm|ogg|mov)$/i.test(f.name);
+    
+    if (isValidType && f.size > 0) {
+      const url = URL.createObjectURL(f);
+      videoLibrary.push({ src: url, name: f.name });
+      validCount++;
+    } else {
+      invalidCount++;
+    }
   });
-  persistLibrary();
-  renderPlaylist();
-  // If we had fewer than 2 before, ensure both screens are filled
-  if (!video1.src) loadVideo(video1, 0);
-  if (!video2.src) loadVideo(video2, 1);
+  
+  if (validCount > 0) {
+    persistLibrary();
+    renderPlaylist();
+    // If we had fewer than 2 before, ensure both screens are filled
+    if (!video1.src) loadVideo(video1, 0);
+    if (!video2.src) loadVideo(video2, 1);
+  }
+  
+  if (invalidCount > 0) {
+    alert(`${invalidCount} file(s) skipped. Please upload MP4, WebM, OGG, or MOV videos.`);
+  }
+  
+  // Clear the input
+  e.target.value = '';
 });
 resetLibraryBtn.addEventListener('click', () => { initLibrary(true); persistLibrary(); renderPlaylist(); });
 
