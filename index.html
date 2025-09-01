@@ -493,6 +493,12 @@ let nextIndex = 0;
 let isWebgazerStarted = false;
 let lastSwitchTime = 0;
 
+// Add simple EMA smoothing variables
+let emaX = 0;
+let emaY = 0;
+let isFirstGaze = true;
+const alpha = 0.3; // Smoothing factor - higher = more responsive, lower = smoother
+
 // Remove all complex tracking variables
 // let gazeHistory = [];
 // let lastGazeTime = 0;
@@ -976,6 +982,10 @@ function resetEyeTracking() {
     // Reset simple variables
     isWebgazerStarted = false;
     lastSwitchTime = 0;
+    // Reset EMA values
+    emaX = 0;
+    emaY = 0;
+    isFirstGaze = true;
     
     console.log('Eye tracking reset complete');
   } catch (error) {
