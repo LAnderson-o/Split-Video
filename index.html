@@ -1,0 +1,244 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Immediate gaze-switch — visible offscreen frames</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    html,body { height:100%; margin:0; font-family:system-ui,Arial; background:#081018; color:#e6eef8; }
+    .container { height:100vh; display:flex; flex-direction:column; gap:6px; padding:8px; box-sizing:border-box; }
+    .panel { flex:1; position:relative; overflow:hidden; border-radius:10px; background:#000; display:flex; align-items:center; justify-content:center; }
+    video { width:100%; height:100%; object-fit:cover; display:block; background:#000; }
+    .selected { outline: 6px solid rgba(60,220,160,0.95); transform:scale(1.01); }
+    .hud { position:fixed; left:12px; top:12px; z-index:999; background:rgba(7,11,14,0.75); padding:8px 12px; border-radius:10px; display:flex; gap:8px; align-items:center; font-size:13px; }
+    .hint { position:fixed; right:12px; top:12px; z-index:999; background:rgba(7,11,14,0.75); padding:8px 12px; border-radius:10px; font-size:13px; }
+    button { background:#111827; color:#e6eef8; border:1px solid rgba(255,255,255,0.04); padding:6px 8px; border-radius:8px; cursor:pointer; }
+    .dot { position:fixed; width:14px; height:14px; border-radius:50%; transform:translate(-50%,-50%); z-index:1000; pointer-events:none; mix-blend-mode:screen; background: rgba(255,80,80,0.95); display:none; }
+  </style>
+</head>
+<body>
+  <div class="hud">
+    <strong>Gaze Visible Frames</strong>
+    <span id="status" style="font-size:12px; margin-left:8px;">Initializing...</span>
+    <button id="toggleCamera">Toggle Camera</button>
+    <button id="useMouse">Mouse fallback</button>
+    <button id="manualNext">Manual Next</button>
+  </div>
+  <div class="hint">Look or move pointer to top/bottom — active plays, other shows a still frame.</div>
+  <div id="gazedot" class="dot"></div>
+
+  <div class="container">
+    <div id="topPanel" class="panel">
+      <video id="vTop" muted playsinline></video>
+    </div>
+
+    <div id="bottomPanel" class="panel">
+      <video id="vBot" muted playsinline></video>
+    </div>
+  </div>
+
+  <!-- WebGazer -->
+  <script src="https://webgazer.cs.brown.edu/webgazer.js"></script>
+  <script>
+    // ---------- Config ----------
+    const SMOOTH_COUNT = 1;   // very sensitive
+    const SHOW_GAZE_DOT = true;
+    // ----------------------------
+
+    const videoPool = [
+      {src: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4', title: 'Flower'},
+      {src: 'https://www.w3schools.com/html/mov_bbb.mp4', title: 'Big Buck (sample)'},
+      {src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4', title: 'BigBuckBunny'},
+      {src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4', title: 'ElephantsDream'},
+      {src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4', title: 'Sintel'},
+      {src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4', title: 'TearsOfSteel'}
+    ];
+
+    const vTop = document.getElementById('vTop');
+    const vBot = document.getElementById('vBot');
+    const topPanel = document.getElementById('topPanel');
+    const bottomPanel = document.getElementById('bottomPanel');
+    const statusEl = document.getElementById('status');
+    const gazeDot = document.getElementById('gazedot');
+
+    // pool indices
+    let topIndex = 0, bottomIndex = 1, nextPoolIndex = 2;
+
+    // IMPORTANT: ensure the video element gets a visible frame even when paused:
+    // - preload='auto' and autoplay muted briefly, then pause (leaves a visible frame)
+    function setVideoElementSrc(el, poolIndex) {
+      el.preload = 'auto';
+      el.muted = true;
+      el.playsInline = true;
+      el.src = videoPool[poolIndex].src;
+      el.dataset.poolIndex = poolIndex;
+      el.load();
+
+      // Try to play immediately (muted plays are usually allowed), then pause if it shouldn't be playing.
+      const promise = el.play();
+      if (promise !== undefined) {
+        promise.then(() => {
+          // If this element should be playing (selected), keep it; otherwise pause to leave a visible frame.
+          const isSelectedPlaying = (selected === 0 && el === vTop) || (selected === 1 && el === vBot);
+          if (!isSelectedPlaying) {
+            // pause but keep the current frame visible
+            el.pause();
+          }
+        }).catch(() => {
+          // autoplay blocked by browser despite muted - pause and rely on the poster/first-frame fallback.
+          try { el.pause(); } catch(e){}
+        });
+      } else {
+        // no promise returned — try to pause as fallback
+        try { el.pause(); } catch(e){}
+      }
+    }
+
+    // init
+    setVideoElementSrc(vTop, topIndex);
+    setVideoElementSrc(vBot, bottomIndex);
+
+    // selected: 0 => top, 1 => bottom
+    let selected = 0;
+    function applySelection() {
+      topPanel.classList.toggle('selected', selected === 0);
+      bottomPanel.classList.toggle('selected', selected === 1);
+
+      // Play the selected one and pause the other (paused one should still show frame)
+      if (selected === 0) {
+        vTop.muted = true;
+        vTop.play().catch(()=>{});
+        try { vBot.pause(); } catch(e){}
+      } else {
+        vBot.muted = true;
+        vBot.play().catch(()=>{});
+        try { vTop.pause(); } catch(e){}
+      }
+    }
+    applySelection();
+
+    // click fallbacks
+    topPanel.addEventListener('click', ()=> { if (selected !== 0) onSelectionChange(0); });
+    bottomPanel.addEventListener('click', ()=> { if (selected !== 1) onSelectionChange(1); });
+
+    // smoothing (small for sensitivity)
+    const smoothed = [];
+    function addSample(x,y) {
+      smoothed.push({x,y,ts:Date.now()});
+      if (smoothed.length > SMOOTH_COUNT) smoothed.shift();
+      const avg = smoothed.reduce((a,c)=>({x:a.x+c.x, y:a.y+c.y}), {x:0,y:0});
+      avg.x /= smoothed.length; avg.y /= smoothed.length;
+      return avg;
+    }
+
+    function regionFromY(y) {
+      if (y == null) return null;
+      const h = window.innerHeight;
+      return (y < h/2) ? 'top' : 'bottom';
+    }
+
+    // rotate offscreen immediately but ensure the offscreen video ends up paused with a visible frame
+    function rotateOffscreen(newSelected) {
+      const offIsTop = (newSelected === 1);
+      let tries = 0;
+      while ((nextPoolIndex === topIndex || nextPoolIndex === bottomIndex) && tries < videoPool.length) {
+        nextPoolIndex = (nextPoolIndex + 1) % videoPool.length;
+        tries++;
+      }
+      if (offIsTop) {
+        topIndex = nextPoolIndex;
+        setVideoElementSrc(vTop, topIndex);
+        if (selected !== 0) try { vTop.pause(); } catch(e){}
+      } else {
+        bottomIndex = nextPoolIndex;
+        setVideoElementSrc(vBot, bottomIndex);
+        if (selected !== 1) try { vBot.pause(); } catch(e){}
+      }
+      nextPoolIndex = (nextPoolIndex + 1) % videoPool.length;
+    }
+
+    function onSelectionChange(newSelected) {
+      selected = newSelected;
+      applySelection();
+      rotateOffscreen(newSelected);
+    }
+
+    /* ------------- WebGazer ------------- */
+    let webgazerActive = false;
+    let lastRegion = null;
+
+    async function startWebgazer() {
+      statusEl.textContent = 'Requesting camera...';
+      try {
+        await webgazer.setRegression('ridge').setGazeListener(gazeListener).begin();
+        webgazer.showVideo(false); webgazer.showFaceOverlay(false); webgazer.showPredictionPoints(false);
+        webgazerActive = true;
+        statusEl.textContent = 'Camera active — immediate switching on region change.';
+      } catch (e) {
+        console.warn(e);
+        statusEl.textContent = 'Camera failed or blocked — use mouse fallback.';
+      }
+    }
+
+    function stopWebgazer() {
+      try { webgazer.pause(); webgazer.clearGazeListener(); webgazerActive = false; statusEl.textContent = 'WebGazer paused.'; } catch(e){ console.warn(e); }
+    }
+
+    function gazeListener(data, timestamp) {
+      if (!data) {
+        statusEl.textContent = 'No gaze data yet.';
+        return;
+      }
+      const s = addSample(data.x, data.y);
+      if (SHOW_GAZE_DOT) {
+        gazeDot.style.left = s.x + 'px';
+        gazeDot.style.top = s.y + 'px';
+        gazeDot.style.display = 'block';
+      }
+      const region = regionFromY(s.y);
+      if (region && region !== lastRegion) {
+        lastRegion = region;
+        const newSelected = (region === 'top') ? 0 : 1;
+        if (newSelected !== selected) onSelectionChange(newSelected);
+      }
+    }
+
+    // mouse fallback
+    document.getElementById('useMouse').addEventListener('click', ()=> {
+      statusEl.textContent = 'Mouse fallback — immediate switching.';
+      document.addEventListener('mousemove', (ev)=> {
+        const s = addSample(ev.clientX, ev.clientY);
+        const region = regionFromY(s.y);
+        if (region && region !== lastRegion) {
+          lastRegion = region;
+          const newSelected = (region === 'top') ? 0 : 1;
+          if (newSelected !== selected) onSelectionChange(newSelected);
+        }
+        if (SHOW_GAZE_DOT) {
+          gazeDot.style.left = s.x + 'px';
+          gazeDot.style.top = s.y + 'px';
+          gazeDot.style.display = 'block';
+        }
+      });
+    });
+
+    document.getElementById('toggleCamera').addEventListener('click', ()=> {
+      if (webgazerActive) stopWebgazer(); else startWebgazer();
+    });
+
+    document.getElementById('manualNext').addEventListener('click', ()=> {
+      const newSel = selected === 0 ? 1 : 0;
+      onSelectionChange(newSel);
+    });
+
+    // try to start automatically
+    startWebgazer();
+
+    // cleanup
+    window.addEventListener('beforeunload', ()=> { try { webgazer.end(); } catch(e){} });
+
+    // ensure selected video plays on load (some browsers allow autoplay for muted)
+    setTimeout(()=> applySelection(), 300);
+  </script>
+</body>
+</html>
