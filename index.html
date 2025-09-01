@@ -489,6 +489,7 @@ let gazeConfidenceThreshold = 0.6; // Minimum confidence for valid gaze
 let lastStableY = null;
 let gazeStabilityCounter = 0;
 let lastSwitchTime = 0;
+let lastStableX = null; // Added for stuck value detection
 
 function defaultLibrary() {
   return [
@@ -783,6 +784,7 @@ function smoothGazeData(x, y, confidence) {
   
   lastGazeTime = now;
   lastStableY = smoothedY;
+  lastStableX = smoothedX; // Update lastStableX
   
   return { x: finalX, y: smoothedY };
 }
@@ -843,6 +845,7 @@ function startGazeTracking() {
     lastStableY = null;
     gazeStabilityCounter = 0;
     lastSwitchTime = 0;
+    lastStableX = null; // Reset lastStableX
     
     console.log('Starting gaze tracking...');
     
@@ -861,10 +864,20 @@ function startGazeTracking() {
       const y = data.y;
       const confidence = data.confidence || 0.5;
       
-      // Basic validation - check if values are reasonable
+      // Enhanced validation - check for stuck values
       if (x < 0 || x > window.innerWidth || y < 0 || y > window.innerHeight) {
         console.log('Gaze data out of bounds:', { x, y });
         return;
+      }
+      
+      // Check for stuck values (same position for too long)
+      if (lastStableX !== null && lastStableY !== null) {
+        const xDiff = Math.abs(x - lastStableX);
+        const yDiff = Math.abs(y - lastStableY);
+        if (xDiff < 5 && yDiff < 5) {
+          console.log('Gaze data appears stuck, ignoring:', { x, y, xDiff, yDiff });
+          return;
+        }
       }
       
       // Apply smoothing and filtering
@@ -1051,6 +1064,7 @@ function resetEyeTracking() {
     lastStableY = null;
     gazeStabilityCounter = 0;
     lastSwitchTime = 0;
+    lastStableX = null; // Reset lastStableX
     
     console.log('Eye tracking reset complete');
   } catch (error) {
