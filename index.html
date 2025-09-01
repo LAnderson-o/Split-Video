@@ -166,6 +166,8 @@
       display: flex; 
       gap: 8px; 
       z-index: 40; 
+      flex-direction: column;
+      align-items: flex-end;
     }
     
     .btn { 
@@ -180,6 +182,7 @@
       cursor: pointer;
       transition: all 0.2s ease;
       min-height: 40px;
+      white-space: nowrap;
     }
     .btn:hover { background: #fff; transform: translateY(-1px); }
     .btn.ghost { 
@@ -276,6 +279,13 @@
       .btn { padding: 8px 12px; font-size: 0.8125rem; }
       #sheetContent { padding: 16px; gap: 20px; }
       .row { gap: 8px; }
+      #modeBadge { font-size: 0.6875rem; padding: 6px 10px; }
+    }
+    
+    @media (max-width: 360px) {
+      #controls { right: 8px; top: 8px; }
+      #modeBadge { left: 8px; top: 8px; }
+      .btn { padding: 6px 10px; font-size: 0.75rem; min-height: 36px; }
     }
     
     /* Safe areas */
@@ -381,11 +391,11 @@ let pointerY = null;
 
 function defaultLibrary() {
   return [
-    { src: "https://www.w3schools.com/html/mov_bbb.mp4", name: "Big Buck Bunny" },
-    { src: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4", name: "Flower" },
-    { src: "https://www.w3schools.com/html/movie.mp4", name: "Bear" },
-    { src: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/bee.mp4", name: "Bee" },
-    { src: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/earth.mp4", name: "Earth" }
+    { src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4", name: "Big Buck Bunny" },
+    { src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4", name: "Elephants Dream" },
+    { src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4", name: "For Bigger Blazes" },
+    { src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4", name: "For Bigger Escapes" },
+    { src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4", name: "For Bigger Fun" }
   ];
 }
 
@@ -458,8 +468,23 @@ function loadVideo(videoEl, libIndex) {
   videoEl.onloadeddata = null;
   videoEl.onerror = null;
   videoEl.oncanplay = null;
+  videoEl.onloadstart = null;
+  
+  let loadTimeout;
+  
+  videoEl.onloadstart = () => {
+    // Set a timeout for loading
+    loadTimeout = setTimeout(() => {
+      if (videoEl.readyState < 2) { // HAVE_CURRENT_DATA
+        console.warn('Video load timeout:', item.src);
+        showVideoState(videoEl, 'error', 'Load timeout');
+        retryWithNextVideo(videoEl, libIndex);
+      }
+    }, 10000); // 10 second timeout
+  };
   
   videoEl.onloadeddata = () => {
+    clearTimeout(loadTimeout);
     showVideoState(videoEl, '', '');
     // Auto-play if this is the active video
     if (active === videoEl && !videoEl.muted) {
@@ -468,21 +493,32 @@ function loadVideo(videoEl, libIndex) {
   };
   
   videoEl.onerror = () => {
+    clearTimeout(loadTimeout);
     console.warn('Video load error:', item.src);
     showVideoState(videoEl, 'error', 'Failed to load');
-    // Try next video after a delay
-    setTimeout(() => {
-      const nextIdx = getNextIndex(parseInt(videoEl.dataset.libIndex, 10));
-      if (nextIdx !== libIndex) loadVideo(videoEl, nextIdx);
-    }, 2000);
+    retryWithNextVideo(videoEl, libIndex);
   };
   
   videoEl.oncanplay = () => {
+    clearTimeout(loadTimeout);
     showVideoState(videoEl, '', '');
   };
   
   videoEl.src = item.src;
   videoEl.load();
+}
+
+function retryWithNextVideo(videoEl, currentIndex) {
+  // Try next video after a delay
+  setTimeout(() => {
+    const nextIdx = getNextIndex(currentIndex);
+    if (nextIdx !== currentIndex) {
+      loadVideo(videoEl, nextIdx);
+    } else {
+      // If we've tried all videos, show a message
+      showVideoState(videoEl, 'error', 'No videos available');
+    }
+  }, 2000);
 }
 
 function getNextIndex(excludeLibIndex) {
@@ -551,7 +587,8 @@ function updateModeUI() {
 function handleAttentionAt(y) {
   if (typeof y !== 'number') return;
   if (showCursor) {
-    cursor.style.left = `${window.innerWidth / 2}px`;
+    // Use actual gaze X position instead of center
+    cursor.style.left = `${Math.max(0, Math.min(window.innerWidth, window.innerWidth / 2))}px`;
     cursor.style.top = `${y}px`;
   }
   const half = window.innerHeight / 2;
@@ -596,13 +633,23 @@ function ensureWebgazerStarted() {
 function startGazeTracking() {
   try {
     webgazer.setGazeListener((data) => {
-      if (!data) return;
+      if (!data || data.x === null || data.y === null) return;
+      const x = data.x;
       const y = data.y;
+      
+      // Apply drift compensation - filter out extreme values
+      const maxDrift = 100; // pixels
+      const centerX = window.innerWidth / 2;
+      const centerY = window.innerHeight / 2;
+      
+      const filteredX = Math.abs(x - centerX) > maxDrift ? centerX : x;
+      const filteredY = Math.abs(y - centerY) > maxDrift ? centerY : y;
+      
       if (showCursor) {
-        cursor.style.left = `${data.x}px`;
-        cursor.style.top = `${y}px`;
+        cursor.style.left = `${Math.max(0, Math.min(window.innerWidth, filteredX))}px`;
+        cursor.style.top = `${Math.max(0, Math.min(window.innerHeight, filteredY))}px`;
       }
-      handleAttentionAt(y);
+      handleAttentionAt(filteredY);
     });
   } catch(_) {}
 }
