@@ -44,7 +44,7 @@
 
   let active = null;
 
-  // Extended video libraries (looping)
+  // Video libraries
   const library1 = [
     "https://www.w3schools.com/html/mov_bbb.mp4",
     "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
@@ -72,21 +72,37 @@
   loadVideo(video1, library1, index1);
   loadVideo(video2, library2, index2);
 
-  // Automatic cycling for non-attentive video
+  // Seamless cycling for non-attentive half
   function cycleNonAttentive(nonActiveVideo, library, indexVarName){
     window[indexVarName] = (window[indexVarName]+1) % library.length;
-    loadVideo(nonActiveVideo, library, window[indexVarName]).play();
+
+    const buffer = document.createElement('video');
+    buffer.src = library[window[indexVarName]];
+    buffer.muted = nonActiveVideo.muted;
+    buffer.loop = false;
+    buffer.preload = 'auto';
+    buffer.style.display = 'none';
+    document.body.appendChild(buffer);
+
+    buffer.oncanplaythrough = () => {
+      nonActiveVideo.src = buffer.src;
+      nonActiveVideo.play();
+      document.body.removeChild(buffer);
+    };
   }
 
   function activate(video){
-    if(active===video) return;
+    if(active === video) return;
+
     const nonActive = (video===video1)? video2 : video1;
     const library = (nonActive===video1)? library1 : library2;
     const indexVar = (nonActive===video1)? "index1" : "index2";
+
     if(active) active.pause();
     video.play();
     active = video;
-    // Cycle the non-attentive half immediately
+
+    // Cycle the non-attentive half seamlessly
     cycleNonAttentive(nonActive, library, indexVar);
   }
 
