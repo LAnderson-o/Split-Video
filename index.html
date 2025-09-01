@@ -652,13 +652,16 @@ function showCalibrationPoint() {
 
 calibrationDot.addEventListener("click", () => {
   try { 
+    console.log('Calibration point clicked:', { x: calibrationDot.offsetLeft, y: calibrationDot.offsetTop });
     webgazer.recordScreenPosition(calibrationDot.offsetLeft, calibrationDot.offsetTop, "click"); 
     // Store calibration data for validation
     calibrationData.push({
       target: { x: calibrationDot.offsetLeft, y: calibrationDot.offsetTop },
       timestamp: Date.now()
     });
-  } catch(_) {}
+  } catch(error) {
+    console.error('Error recording calibration point:', error);
+  }
   currentPoint++;
   showCalibrationPoint();
 });
@@ -785,38 +788,84 @@ function isGazeStable(y) {
 function ensureWebgazerStarted() {
   if (isWebgazerStarted) return Promise.resolve();
   try {
-    return webgazer.setRegression('ridge').showVideo(false).showPredictionPoints(false).begin().then(() => {
-      isWebgazerStarted = true;
-      const style = document.createElement('style');
-      style.innerHTML = "#webgazerVideoFeed, #webgazerVideoCanvas, #webgazerFaceOverlay, #webgazerFaceFeedbackBox { display: none !important; }";
-      document.head.appendChild(style);
-    });
+    return webgazer
+      .setRegression('ridge')
+      .showVideo(false)
+      .showPredictionPoints(false)
+      .setGazeListener(() => {}) // Clear any existing listeners
+      .begin()
+      .then(() => {
+        isWebgazerStarted = true;
+        const style = document.createElement('style');
+        style.innerHTML = "#webgazerVideoFeed, #webgazerVideoCanvas, #webgazerFaceOverlay, #webgazerFaceFeedbackBox { display: none !important; }";
+        document.head.appendChild(style);
+        console.log('WebGazer started successfully');
+      })
+      .catch(err => {
+        console.error('WebGazer failed to start:', err);
+        throw err;
+      });
   } catch (e) {
+    console.error('WebGazer initialization error:', e);
     return Promise.reject(e);
   }
 }
 
 function startGazeTracking() {
   try {
+    // Clear any existing listeners first
+    webgazer.clearGazeListener();
+    
+    // Reset tracking variables
+    gazeHistory = [];
+    lastGazeTime = 0;
+    lastStableY = null;
+    gazeStabilityCounter = 0;
+    lastSwitchTime = 0;
+    
+    console.log('Starting gaze tracking...');
+    
     webgazer.setGazeListener((data) => {
-      if (!data || data.x === null || data.y === null) return;
+      // Debug logging
+      if (data && (data.x !== null || data.y !== null)) {
+        console.log('Gaze data received:', { x: data.x, y: data.y, confidence: data.confidence });
+      }
+      
+      if (!data || data.x === null || data.y === null) {
+        console.log('Invalid gaze data received');
+        return;
+      }
       
       const x = data.x;
       const y = data.y;
-      const confidence = data.confidence || 0.5; // Default confidence if not provided
+      const confidence = data.confidence || 0.5;
+      
+      // Basic validation - check if values are reasonable
+      if (x < 0 || x > window.innerWidth || y < 0 || y > window.innerHeight) {
+        console.log('Gaze data out of bounds:', { x, y });
+        return;
+      }
       
       // Apply smoothing and filtering
       const smoothed = smoothGazeData(x, y, confidence);
-      if (!smoothed) return;
+      if (!smoothed) {
+        console.log('Gaze data filtered out');
+        return;
+      }
       
       const { x: filteredX, y: filteredY } = smoothed;
       
       // Check if gaze is stable before updating
-      if (!isGazeStable(filteredY)) return;
+      if (!isGazeStable(filteredY)) {
+        console.log('Gaze not stable yet');
+        return;
+      }
       
       // Apply boundary constraints
       const boundedX = Math.max(0, Math.min(window.innerWidth, filteredX));
       const boundedY = Math.max(0, Math.min(window.innerHeight, filteredY));
+      
+      console.log('Final gaze position:', { x: boundedX, y: boundedY });
       
       if (showCursor) {
         cursor.style.left = `${boundedX}px`;
@@ -825,11 +874,25 @@ function startGazeTracking() {
       
       handleAttentionAt(boundedY);
     });
-  } catch(_) {}
+    
+    console.log('Gaze tracking started successfully');
+  } catch(error) {
+    console.error('Error starting gaze tracking:', error);
+    // Fallback to pointer mode
+    mode = 'pointer';
+    updateModeUI();
+    startPointerTracking();
+    alert("Eye tracking failed. Switched to Pointer mode.");
+  }
 }
 
 function stopGazeTracking() {
-  try { webgazer.clearGazeListener(); } catch(_) {}
+  try { 
+    webgazer.clearGazeListener(); 
+    console.log('Gaze tracking stopped');
+  } catch(error) {
+    console.error('Error stopping gaze tracking:', error);
+  }
 }
 
 function startCalibrationFlow() {
@@ -846,18 +909,22 @@ function startCalibrationFlow() {
 
 function finishCalibration() {
   calibrationOverlay.style.display = "none";
+  console.log('Calibration completed with', calibrationData.length, 'points');
+  
   // Initialize tracking based on current mode
   if (mode === 'gaze') {
     ensureWebgazerStarted().then(() => {
+      console.log('Starting gaze tracking after calibration');
       startGazeTracking();
     }).catch(err => {
+      console.error('Failed to start WebGazer after calibration:', err);
       mode = 'pointer';
       updateModeUI();
       startPointerTracking();
       alert("Camera access denied. Switched to Pointer mode.");
-      console.error(err);
     });
   } else {
+    console.log('Starting pointer tracking after calibration');
     startPointerTracking();
   }
 }
@@ -924,7 +991,38 @@ menuStartCalibration.addEventListener('click', () => {
     startCalibrationFlow();
   }
 });
-menuRecalibrate.addEventListener('click', () => { topMenu.classList.remove('open'); startCalibrationFlow(); });
+function resetEyeTracking() {
+  console.log('Resetting eye tracking...');
+  try {
+    // Stop current tracking
+    stopGazeTracking();
+    
+    // Reset WebGazer
+    if (typeof webgazer !== 'undefined') {
+      webgazer.clearGazeListener();
+      webgazer.end();
+    }
+    
+    // Reset variables
+    isWebgazerStarted = false;
+    gazeHistory = [];
+    lastGazeTime = 0;
+    lastStableY = null;
+    gazeStabilityCounter = 0;
+    lastSwitchTime = 0;
+    
+    console.log('Eye tracking reset complete');
+  } catch (error) {
+    console.error('Error resetting eye tracking:', error);
+  }
+}
+
+// Add reset button to menu
+menuRecalibrate.addEventListener('click', () => { 
+  topMenu.classList.remove('open'); 
+  resetEyeTracking();
+  startCalibrationFlow(); 
+});
 menuToggleMute.addEventListener('click', () => { 
   const willUnmute = video1.muted || video2.muted;
   [video1, video2].forEach(v => { v.muted = !willUnmute ? true : false; if (!v.paused) v.play().catch(()=>{}); });
@@ -996,6 +1094,32 @@ fileInput.addEventListener('change', (e) => {
   e.target.value = '';
 });
 resetLibraryBtn.addEventListener('click', () => { initLibrary(true); persistLibrary(); renderPlaylist(); });
+
+// Add test function for WebGazer
+function testWebGazer() {
+  console.log('Testing WebGazer...');
+  try {
+    if (typeof webgazer === 'undefined') {
+      console.error('WebGazer is not loaded');
+      return false;
+    }
+    
+    console.log('WebGazer object found:', webgazer);
+    console.log('WebGazer methods:', Object.getOwnPropertyNames(webgazer));
+    
+    return true;
+  } catch (error) {
+    console.error('Error testing WebGazer:', error);
+    return false;
+  }
+}
+
+// Test WebGazer on page load
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    testWebGazer();
+  }, 1000);
+});
 
 function applyMode() {
   updateModeUI();
