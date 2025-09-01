@@ -1004,11 +1004,21 @@ document.addEventListener('click', (e) => {
 menuModeGaze.addEventListener('click', () => { mode = 'gaze'; applyMode(); topMenu.classList.remove('open'); });
 menuModePointer.addEventListener('click', () => { mode = 'pointer'; applyMode(); topMenu.classList.remove('open'); });
 menuToggleCursor.addEventListener('click', () => { showCursor = !showCursor; updateModeUI(); });
-menuStartCalibration.addEventListener('click', () => { 
+menuStartCalibration.addEventListener('click', async () => { 
   topMenu.classList.remove('open'); 
   menuToggle.textContent = '☰ Menu';
   startButton.style.display = "none";
   if (mode === 'gaze') {
+    // Request camera permission first
+    const hasPermission = await requestCameraPermission();
+    if (!hasPermission) {
+      mode = 'pointer';
+      updateModeUI();
+      startPointerTracking();
+      return;
+    }
+    
+    // Then start WebGazer
     ensureWebgazerStarted().then(() => {
       startCalibrationFlow();
     }).catch(err => {
@@ -1162,6 +1172,34 @@ function applyMode() {
   } else {
     stopGazeTracking();
     startPointerTracking();
+  }
+}
+
+// Add explicit camera permission request function
+async function requestCameraPermission() {
+  try {
+    console.log('Requesting camera permission...');
+    const stream = await navigator.mediaDevices.getUserMedia({ 
+      video: { 
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+        facingMode: 'user'
+      } 
+    });
+    console.log('Camera permission granted');
+    // Stop the stream immediately since WebGazer will request its own
+    stream.getTracks().forEach(track => track.stop());
+    return true;
+  } catch (err) {
+    console.error('Camera permission denied:', err);
+    if (err.name === 'NotAllowedError') {
+      alert('Camera access is required for eye tracking. Please allow camera access and try again.');
+    } else if (err.name === 'NotFoundError') {
+      alert('No camera detected. Please connect a camera and try again.');
+    } else {
+      alert('Camera access failed: ' + err.message);
+    }
+    return false;
   }
 }
 
