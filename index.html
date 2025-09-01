@@ -3,9 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <title>Split-Video</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <style>
-    body { margin:0; display:flex; flex-direction:column; height:100vh; overflow:hidden; background:black; touch-action: manipulation; -ms-touch-action: manipulation; }
+    body { margin:0; display:flex; flex-direction:column; height:100vh; overflow:hidden; background:black; }
     .video-container { flex:1; display:flex; }
     video { width:100%; height:100%; object-fit:cover; background:black; }
     #cursor { position:absolute; width:15px; height:15px; border-radius:50%; background:red; pointer-events:none; transform:translate(-50%,-50%); z-index:20; }
@@ -45,132 +44,88 @@ const startButton = document.getElementById("startButton");
 
 let active = null;
 let lastAttended = null;
-
-// Video libraries
-const library1 = [
+let videoLibrary = [
   "https://www.w3schools.com/html/mov_bbb.mp4",
   "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
   "https://www.w3schools.com/html/movie.mp4",
   "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/bee.mp4",
   "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/earth.mp4"
 ];
-const library2 = [
-  "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-  "https://www.w3schools.com/html/mov_bbb.mp4",
-  "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/bee.mp4",
-  "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/earth.mp4",
-  "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/snow.mp4"
-];
+let index = 0;
 
-let index1 = 0, index2 = 0;
-
-function loadVideo(videoEl, library, index){
-  videoEl.src = library[index % library.length];
+function loadVideo(videoEl, index) {
+  videoEl.src = videoLibrary[index];
   videoEl.load();
-  return videoEl;
 }
 
-// Load initial videos
-loadVideo(video1, library1, index1);
-loadVideo(video2, library2, index2);
-
-// Seamless cycling for non-attentive half
-function cycleNonAttentive(nonActiveVideo, library, indexVarName){
-  window[indexVarName] = (window[indexVarName]+1) % library.length;
-
-  const buffer = document.createElement('video');
-  buffer.src = library[window[indexVarName]];
-  buffer.muted = nonActiveVideo.muted;
-  buffer.loop = false;
-  buffer.preload = 'auto';
-  buffer.style.display = 'none';
-  document.body.appendChild(buffer);
-
-  buffer.oncanplaythrough = () => {
-    nonActiveVideo.src = buffer.src;
-    nonActiveVideo.play();
-    document.body.removeChild(buffer);
-  };
+function cycleVideo(videoEl) {
+  index = (index + 1) % videoLibrary.length;
+  loadVideo(videoEl, index);
 }
 
-function activate(video){
-  if(active === video) return;
-  if(active) active.pause();
+function activate(video) {
+  if (active === video) return;
+  if (active) active.pause();
   video.play();
   active = video;
 }
 
-unlock.addEventListener("click", ()=>{
-  [video1,video2].forEach(v=>{v.muted=false; v.play().catch(()=>{});});
-  unlock.style.display="none";
+unlock.addEventListener("click", () => {
+  [video1, video2].forEach(v => { v.muted = false; v.play().catch(() => {}); });
+  unlock.style.display = "none";
 });
 
-// Tap-based calibration
-const points=[[10,10],[90,10],[50,50],[10,90],[90,90]];
-let currentPoint=0;
-function showCalibrationPoint(){
-  if(currentPoint>=points.length){ calibrationOverlay.style.display="none"; startTracking(); return; }
-  const [px,py]=points[currentPoint];
-  calibrationDot.style.left=Math.min(Math.max(px,5),95)+"%";
-  calibrationDot.style.top=Math.min(Math.max(py,5),95)+"%";
+const points = [[10,10],[90,10],[50,50],[10,90],[90,90]];
+let currentPoint = 0;
+
+function showCalibrationPoint() {
+  if (currentPoint >= points.length) { calibrationOverlay.style.display = "none"; startTracking(); return; }
+  const [px, py] = points[currentPoint];
+  calibrationDot.style.left = `${Math.min(Math.max(px, 5), 95)}%`;
+  calibrationDot.style.top = `${Math.min(Math.max(py, 5), 95)}%`;
 }
 
-calibrationDot.addEventListener("click", ()=>{
-  webgazer.recordScreenPosition(calibrationDot.offsetLeft, calibrationDot.offsetTop,"click");
+calibrationDot.addEventListener("click", () => {
+  webgazer.recordScreenPosition(calibrationDot.offsetLeft, calibrationDot.offsetTop, "click");
   currentPoint++;
   showCalibrationPoint();
 });
 
-function startTracking(){
-  webgazer.setGazeListener((data)=>{
-    if(!data) return;
-    const x=data.x, y=data.y;
-    cursor.style.left=x+"px";
-    cursor.style.top=y+"px";
+function startTracking() {
+  webgazer.setGazeListener((data) => {
+    if (!data) return;
+    const x = data.x, y = data.y;
+    cursor.style.left = `${x}px`;
+    cursor.style.top = `${y}px`;
 
-    const half = window.innerHeight/2;
-    let currentlyLookingAt = (y<half)? video1 : video2;
+    const half = window.innerHeight / 2;
+    let currentlyLookingAt = (y < half) ? video1 : video2;
 
-    if(currentlyLookingAt !== lastAttended){
+    if (currentlyLookingAt !== lastAttended) {
       activate(currentlyLookingAt);
-
-      const nonActive = (currentlyLookingAt===video1)? video2 : video1;
-      const library = (nonActive===video1)? library1 : library2;
-      const indexVar = (nonActive===video1)? "index1" : "index2";
-      cycleNonAttentive(nonActive, library, indexVar);
-
+      const nonActive = (currentlyLookingAt === video1) ? video2 : video1;
+      cycleVideo(nonActive);
       lastAttended = currentlyLookingAt;
     }
-
   }).begin();
 
-  const style=document.createElement('style');
-  style.innerHTML = "#webgazerVideoFeed,#webgazerVideoCanvas,#webgazerFaceOverlay,#webgazerFaceFeedbackBox{display:none !important;}";
+  const style = document.createElement('style');
+  style.innerHTML = "#webgazerVideoFeed, #webgazerVideoCanvas, #webgazerFaceOverlay, #webgazerFaceFeedbackBox { display: none !important; }";
   document.head.appendChild(style);
 
-  // Auto-cycle non-attentive half every 7s even if gaze doesn't switch
-  setInterval(()=>{
-    if(!lastAttended) return;
-    const nonActive = (lastAttended===video1)? video2 : video1;
-    const library = (nonActive===video1)? library1 : library2;
-    const indexVar = (nonActive===video1)? "index1" : "index2";
-    cycleNonAttentive(nonActive, library, indexVar);
-  }, 7000);
-
-  // Unmute videos after calibration
   [video1, video2].forEach(v => {
     v.muted = false;
     v.play().catch(() => {});
   });
 }
 
-startButton.addEventListener("click", ()=>{
-  startButton.style.display="none";
+startButton.addEventListener("click", () => {
+  startButton.style.display = "none";
   webgazer.setRegression('ridge').showVideo(false).showPredictionPoints(false).begin()
-    .then(()=>{
-      calibrationOverlay.style.display="flex";
+    .then(() => {
+      calibrationOverlay.style.display = "flex";
       showCalibrationPoint();
-    }).catch(err=>{
+    }).catch(err => {
       alert("Camera access denied. Please allow camera to use eye tracking.");
       console.error(err);
     });
